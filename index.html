@@ -10,6 +10,7 @@
       height: 100%;
       margin: 0;
       overflow: hidden;
+      overscroll-behavior: none;
       background: #fff;
     }
 
@@ -17,8 +18,10 @@
       display: block;
       width: 100vw;
       height: 100vh;
+      height: 100dvh;
       cursor: ns-resize;
       outline: 0;
+      touch-action: none;
     }
 
     /* 正常加载后不显示；仅为直接双击 HTML 时选取本地 .riv 的兜底。 */
@@ -48,7 +51,7 @@
   </style>
 </head>
 <body>
-  <canvas id="rive-canvas" aria-label="滚轮控制动画"></canvas>
+  <canvas id="rive-canvas" aria-label="滚轮或手指滑动控制动画"></canvas>
 
   <div id="fallback" hidden>
     <div>
@@ -104,12 +107,19 @@
 
       renderer.clear();
       renderer.save();
-      // 窄屏完整展示画板，宽屏铺满视口。
+      const portrait = window.innerHeight > window.innerWidth;
+      const narrow = window.innerWidth < 600;
+      // 竖屏聚焦到文字所在区域，避免缩小整个 1920px 画板导致字太小。
+      const visibleBounds = portrait && narrow
+        ? { minX: 500, minY: 0, maxX: 1300, maxY: 1080 }
+        : portrait && window.innerWidth < 1000
+          ? { minX: 400, minY: 0, maxX: 1520, maxY: 1080 }
+          : artboard.bounds;
       renderer.align(
-        window.innerWidth < 700 ? rive.Fit.contain : rive.Fit.cover,
+        portrait && window.innerWidth < 1000 ? rive.Fit.contain : rive.Fit.cover,
         rive.Alignment.center,
         { minX: 0, minY: 0, maxX: canvas.width, maxY: canvas.height },
-        artboard.bounds,
+        visibleBounds,
       );
       artboard.draw(renderer);
       renderer.restore();
@@ -152,6 +162,24 @@
       event.preventDefault();
       play(event.deltaY > 0 ? 1 : -1);
     }, { passive: false });
+
+    let touchStart;
+    canvas.addEventListener("touchstart", (event) => {
+      const touch = event.touches.length === 1 ? event.touches[0] : null;
+      touchStart = touch ? { x: touch.clientX, y: touch.clientY } : undefined;
+    }, { passive: true });
+
+    canvas.addEventListener("touchend", (event) => {
+      if (!touchStart || !animation) return;
+      const touch = event.changedTouches[0];
+      const dx = touch.clientX - touchStart.x;
+      const dy = touch.clientY - touchStart.y;
+      touchStart = undefined;
+      if (Math.abs(dy) < 36 || Math.abs(dy) < Math.abs(dx) * 1.2) return;
+      play(dy < 0 ? 1 : -1);
+    });
+
+    canvas.addEventListener("touchcancel", () => { touchStart = undefined; });
 
     window.addEventListener("resize", requestFrame);
 

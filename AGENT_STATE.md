@@ -140,3 +140,20 @@
 遗留问题：等待用户视觉检查。
 
 下一步：用户确认后再部署。
+
+## Step 09 — 发布修订后的 Rive 动画
+
+时间：2026-09-22
+
+用户要求：将已修正的 Timeline 1 与 Timeline 2 网页部署上线。
+
+修改：
+- 将 index.html、assets/untitled.riv 及之前的工程状态提交至 main（d441778）并推送。
+
+结果：https://xuxudong31.github.io/Personal-Portfolio/
+
+验证：线上 HTML、Rive、WASM、JavaScript 均为 HTTP 200；线上 Rive SHA-256 与本地一致；浏览器实测开场自动播放、滚轮正放和倒放返回起点，页面无错误。PASS
+
+遗留问题：无。
+
+下一步：等待用户下一条指令。

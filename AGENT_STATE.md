@@ -217,8 +217,12 @@
 
 用户要求：把当前版本发布到原有网址，供无需 VPN 的网络环境尝试访问。
 
-修改：准备将本地已验证的 index.html、assets/untitled.riv 发布到 GitHub Pages；不修改动画交互。
+修改：将本地已验证的 index.html、assets/untitled.riv 提交并推送至 main（a78786c）；不修改动画交互。
 
-结果：待提交、推送及线上验证。
+结果：https://xuxudong31.github.io/Personal-Portfolio/ 已发布最新 Timeline 3 滚轮优化版。
 
-验证：本地上一阶段完整交互 PASS；本次发布验证待完成。PARTIAL
+验证：线上 HTML 200 且包含新版滚轮逻辑；线上 Rive 文件 SHA-256 与本地一致，JS/WASM 均为 200。浏览器直接访问公开网址，实测开场、Timeline 2、Timeline 3 滚轮进退和停滚、第 24 帧自动收尾及倒回均通过，无请求失败和页面异常。PASS
+
+遗留问题：GitHub Pages 是否免 VPN 可访问取决于访问者所在网络，本机当前网络可直接打开，但无法代替用户验证其朋友所在网络。
+
+下一步：等待用户反馈。

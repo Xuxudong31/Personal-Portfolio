@@ -64,9 +64,14 @@
   <script type="module">
     import RiveCanvas from "./assets/rive-runtime/canvas_advanced.mjs";
 
-    const RIVE_FILE = "./assets/untitled.riv?v=timeline1-32frames";
+    const RIVE_FILE = "./assets/untitled.riv?v=timeline3-wheel-scrub";
     const INTRO_ANIMATION_NAME = "Timeline 1";
     const SCROLL_ANIMATION_NAME = "Timeline 2";
+    const FINAL_ANIMATION_NAME = "Timeline 3";
+    const FINAL_AUTO_FRAME = 24;
+    const FINAL_SCRUB_PIXELS = 2000;
+    const FINAL_SCRUB_FOLLOW_MS = 45;
+    const FINAL_SCRUB_EPSILON = 0.001;
 
     const canvas = document.querySelector("#rive-canvas");
     const fallback = document.querySelector("#fallback");
@@ -78,15 +83,27 @@
     let riveFile;
     let renderer;
     let artboard;
+    let scrollArtboard;
+    let finalArtboard;
     let introAnimation;
     let animation;
+    let finalAnimation;
     let introTimelineSeconds = 0;
     let introPlayDurationMs = 0;
     let scrollDurationSeconds = 0;
+    let scrollPlayDurationMs = 0;
+    let finalDurationSeconds = 0;
+    let finalPlayDurationMs = 0;
+    let finalAutoProgress = 0;
     let introStartedAt = 0;
     let introProgress = 0;
     let introPlaying = false;
+    let stage = 0;
     let progress = 0;
+    let finalScrubTarget = 0;
+    let finalTailArmed = false;
+    let lastScrubFrameAt = 0;
+    let queuedRewindPixels = 0;
     let motion;
     let raf = 0;
 
@@ -101,15 +118,20 @@
     }
 
     function render() {
-      const activeAnimation = introPlaying ? introAnimation : animation;
+      const activeAnimation = introPlaying
+        ? introAnimation
+        : stage === 0 ? animation : finalAnimation;
+      const activeArtboard = introPlaying
+        ? artboard
+        : stage === 0 ? scrollArtboard : finalArtboard;
       if (!activeAnimation) return;
 
       // 时间轴按 Rive 文件中的 speed 匀速推进；关键帧缓动由 Rive 自身提供。
       activeAnimation.time = introPlaying
         ? introProgress * introTimelineSeconds
-        : progress * scrollDurationSeconds;
+        : progress * (stage === 0 ? scrollDurationSeconds : finalDurationSeconds);
       activeAnimation.apply(1);
-      artboard.advance(0);
+      activeArtboard.advance(0);
       resizeCanvas();
 
       renderer.clear();
@@ -121,14 +143,14 @@
         ? { minX: 500, minY: 0, maxX: 1300, maxY: 1080 }
         : portrait && window.innerWidth < 1000
           ? { minX: 400, minY: 0, maxX: 1520, maxY: 1080 }
-          : artboard.bounds;
+        : activeArtboard.bounds;
       renderer.align(
         portrait && window.innerWidth < 1000 ? rive.Fit.contain : rive.Fit.cover,
         rive.Alignment.center,
         { minX: 0, minY: 0, maxX: canvas.width, maxY: canvas.height },
         visibleBounds,
       );
-      artboard.draw(renderer);
+      activeArtboard.draw(renderer);
       renderer.restore();
       rive.resolveAnimationFrame();
     }
@@ -149,31 +171,95 @@
         const elapsed = Math.min(1, (now - motion.startedAt) / motion.duration);
         // 关键帧插值由 Rive 文件负责；网页端只按真实时长推进。
         progress = motion.from + (motion.to - motion.from) * elapsed;
-        if (elapsed === 1) motion = undefined;
+        if (elapsed === 1) {
+          const finishedKind = motion.kind;
+          motion = undefined;
+          if (finishedKind === "rewindTail") {
+            finalTailArmed = false;
+            finalScrubTarget = Math.max(0, finalAutoProgress
+              - queuedRewindPixels / FINAL_SCRUB_PIXELS * finalAutoProgress);
+            queuedRewindPixels = 0;
+            lastScrubFrameAt = now;
+          }
+        }
+      } else if (stage === 1 && Math.abs(finalScrubTarget - progress) > FINAL_SCRUB_EPSILON) {
+        const elapsed = lastScrubFrameAt ? Math.min(50, now - lastScrubFrameAt) : 16;
+        lastScrubFrameAt = now;
+        progress += (finalScrubTarget - progress) * (1 - Math.exp(-elapsed / FINAL_SCRUB_FOLLOW_MS));
+        if (Math.abs(finalScrubTarget - progress) <= FINAL_SCRUB_EPSILON) progress = finalScrubTarget;
+      }
+      if (stage === 1 && !motion && finalTailArmed && finalScrubTarget >= finalAutoProgress
+          && progress >= finalAutoProgress - FINAL_SCRUB_EPSILON) {
+        progress = finalAutoProgress;
+        finalTailArmed = false;
+        finalScrubTarget = 1;
+        moveTo(1, "autoTail");
       }
       render();
-      if (introPlaying || motion) requestFrame();
+      if (introPlaying || motion || (stage === 1
+        && Math.abs(finalScrubTarget - progress) > FINAL_SCRUB_EPSILON)) requestFrame();
     }
 
-    function play(direction) {
-      if (!animation || introPlaying) return;
-      const target = direction > 0 ? 1 : 0;
+    function moveTo(target, kind = "timed") {
       if (motion?.to === target || Math.abs(target - progress) < 0.0001) return;
-
-      // Timeline 2 按 Rive 文件中的真实时长播放；中途反向按剩余距离返回。
       motion = {
         from: progress,
         to: target,
         startedAt: performance.now(),
-        duration: Math.max(1, scrollDurationSeconds * 1000 * Math.abs(target - progress)),
+        duration: Math.max(1, (stage === 0 ? scrollPlayDurationMs : finalPlayDurationMs) * Math.abs(target - progress)),
+        kind,
       };
+      requestFrame();
+    }
+
+    function play(direction, distance = 120) {
+      if (!animation || !finalAnimation || introPlaying) return;
+      if (stage === 0) {
+        if (direction > 0 && progress >= 0.9999) {
+          stage = 1;
+          progress = 0;
+          finalScrubTarget = 0;
+          finalTailArmed = false;
+          lastScrubFrameAt = 0;
+        } else {
+          moveTo(direction > 0 ? 1 : 0);
+          return;
+        }
+      }
+
+      // Timeline 3 的前 24 帧只响应滚轮位移，停止滚动就停在当前帧。
+      if (motion) {
+        if (motion.kind === "rewindTail" && direction < 0) {
+          queuedRewindPixels = Math.min(FINAL_SCRUB_PIXELS, queuedRewindPixels + distance);
+        }
+        return;
+      }
+      if (progress >= 0.9999) {
+        if (direction < 0) {
+          queuedRewindPixels = 0;
+          moveTo(finalAutoProgress, "rewindTail");
+        }
+        return;
+      }
+      if (direction < 0 && finalScrubTarget <= 0.0001 && progress <= FINAL_SCRUB_EPSILON) {
+        stage = 0;
+        progress = 1;
+        finalScrubTarget = 0;
+        render();
+        moveTo(0);
+        return;
+      }
+      finalScrubTarget = Math.max(0, Math.min(finalAutoProgress,
+        finalScrubTarget + direction * distance / FINAL_SCRUB_PIXELS * finalAutoProgress));
+      finalTailArmed = direction > 0 && finalScrubTarget >= finalAutoProgress;
       requestFrame();
     }
 
     window.addEventListener("wheel", (event) => {
       if (!animation || event.deltaY === 0) return;
       event.preventDefault();
-      play(event.deltaY > 0 ? 1 : -1);
+      const pixels = Math.abs(event.deltaY) * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1);
+      play(event.deltaY > 0 ? 1 : -1, pixels);
     }, { passive: false });
 
     let touchStart;
@@ -190,7 +276,7 @@
       const dx = touch.clientX - start.x;
       const dy = touch.clientY - start.y;
       if (Math.abs(dy) < 36 || Math.abs(dy) < Math.abs(dx) * 1.2) return;
-      play(dy < 0 ? 1 : -1);
+      play(dy < 0 ? 1 : -1, Math.abs(dy));
     });
 
     canvas.addEventListener("touchcancel", () => { touchStart = undefined; });
@@ -200,23 +286,42 @@
     async function loadAnimation(bytes) {
       introAnimation?.delete();
       animation?.delete();
+      finalAnimation?.delete();
+      artboard?.delete?.();
+      scrollArtboard?.delete?.();
+      finalArtboard?.delete?.();
       introAnimation = undefined;
       animation = undefined;
+      finalAnimation = undefined;
       riveFile?.unref?.();
       riveFile = await rive.load(new Uint8Array(bytes));
       artboard = riveFile.defaultArtboard();
+      scrollArtboard = riveFile.defaultArtboard();
+      finalArtboard = riveFile.defaultArtboard();
       const introDefinition = artboard.animationByName(INTRO_ANIMATION_NAME);
-      const scrollDefinition = artboard.animationByName(SCROLL_ANIMATION_NAME);
-      if (!introDefinition || !scrollDefinition) {
-        throw new Error(`找不到 ${INTRO_ANIMATION_NAME} 或 ${SCROLL_ANIMATION_NAME}`);
+      const scrollDefinition = scrollArtboard.animationByName(SCROLL_ANIMATION_NAME);
+      const finalDefinition = finalArtboard.animationByName(FINAL_ANIMATION_NAME);
+      if (!introDefinition || !scrollDefinition || !finalDefinition) {
+        throw new Error("找不到 Timeline 1、Timeline 2 或 Timeline 3");
       }
+      if (finalDefinition.duration < FINAL_AUTO_FRAME) throw new Error("Timeline 3 不足 24 帧");
       introAnimation = new rive.LinearAnimationInstance(introDefinition, artboard);
-      animation = new rive.LinearAnimationInstance(scrollDefinition, artboard);
+      animation = new rive.LinearAnimationInstance(scrollDefinition, scrollArtboard);
+      finalAnimation = new rive.LinearAnimationInstance(finalDefinition, finalArtboard);
       introTimelineSeconds = introDefinition.duration / introDefinition.fps;
       introPlayDurationMs = introTimelineSeconds * 1000 / introDefinition.speed;
       scrollDurationSeconds = scrollDefinition.duration / scrollDefinition.fps;
+      scrollPlayDurationMs = scrollDurationSeconds * 1000 / scrollDefinition.speed;
+      finalDurationSeconds = finalDefinition.duration / finalDefinition.fps;
+      finalPlayDurationMs = finalDurationSeconds * 1000 / finalDefinition.speed;
+      finalAutoProgress = FINAL_AUTO_FRAME / finalDefinition.duration;
       renderer ??= rive.makeRenderer(canvas);
+      stage = 0;
       progress = 0;
+      finalScrubTarget = 0;
+      finalTailArmed = false;
+      lastScrubFrameAt = 0;
+      queuedRewindPixels = 0;
       introProgress = 0;
       introPlaying = true;
       introStartedAt = performance.now();

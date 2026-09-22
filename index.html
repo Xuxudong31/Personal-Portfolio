@@ -64,11 +64,9 @@
   <script type="module">
     import RiveCanvas from "./assets/rive-runtime/canvas_advanced.mjs";
 
-    const RIVE_FILE = "./assets/untitled.riv?v=timeline1-30frames";
-    const ANIMATION_NAME = "Timeline 1";
-    // Timeline 1 共 30 帧、30 fps，完整时长为 1 秒。
-    const KEYFRAME_SEGMENT_SECONDS = 1;
-    const FULL_PLAY_DURATION_MS = 1000;
+    const RIVE_FILE = "./assets/untitled.riv?v=timeline1-32frames";
+    const INTRO_ANIMATION_NAME = "Timeline 1";
+    const SCROLL_ANIMATION_NAME = "Timeline 2";
 
     const canvas = document.querySelector("#rive-canvas");
     const fallback = document.querySelector("#fallback");
@@ -80,7 +78,14 @@
     let riveFile;
     let renderer;
     let artboard;
+    let introAnimation;
     let animation;
+    let introTimelineSeconds = 0;
+    let introPlayDurationMs = 0;
+    let scrollDurationSeconds = 0;
+    let introStartedAt = 0;
+    let introProgress = 0;
+    let introPlaying = false;
     let progress = 0;
     let motion;
     let raf = 0;
@@ -96,12 +101,14 @@
     }
 
     function render() {
-      if (!animation) return;
+      const activeAnimation = introPlaying ? introAnimation : animation;
+      if (!activeAnimation) return;
 
-      // apply() 会使用 Rive 文件内的关键帧插值（包括 .75, 0, .58, 1），
-      // 网页端不额外叠加 CSS / JavaScript 缓动曲线。
-      animation.time = progress * KEYFRAME_SEGMENT_SECONDS;
-      animation.apply(1);
+      // 时间轴按 Rive 文件中的 speed 匀速推进；关键帧缓动由 Rive 自身提供。
+      activeAnimation.time = introPlaying
+        ? introProgress * introTimelineSeconds
+        : progress * scrollDurationSeconds;
+      activeAnimation.apply(1);
       artboard.advance(0);
       resizeCanvas();
 
@@ -132,27 +139,33 @@
 
     function animate(now) {
       raf = 0;
-      if (motion) {
+      if (introPlaying) {
+        introProgress = Math.min(1, (now - introStartedAt) / introPlayDurationMs);
+        if (introProgress === 1) {
+          introPlaying = false;
+          progress = 0;
+        }
+      } else if (motion) {
         const elapsed = Math.min(1, (now - motion.startedAt) / motion.duration);
         // 关键帧插值由 Rive 文件负责；网页端只按真实时长推进。
         progress = motion.from + (motion.to - motion.from) * elapsed;
         if (elapsed === 1) motion = undefined;
       }
       render();
-      if (motion) requestFrame();
+      if (introPlaying || motion) requestFrame();
     }
 
     function play(direction) {
-      if (!animation) return;
+      if (!animation || introPlaying) return;
       const target = direction > 0 ? 1 : 0;
       if (motion?.to === target || Math.abs(target - progress) < 0.0001) return;
 
-      // 正放或倒放完整 0–1 秒关键帧段均为 1 秒；中途反向按剩余距离返回。
+      // Timeline 2 按 Rive 文件中的真实时长播放；中途反向按剩余距离返回。
       motion = {
         from: progress,
         to: target,
         startedAt: performance.now(),
-        duration: Math.max(1, FULL_PLAY_DURATION_MS * Math.abs(target - progress)),
+        duration: Math.max(1, scrollDurationSeconds * 1000 * Math.abs(target - progress)),
       };
       requestFrame();
     }
@@ -170,11 +183,12 @@
     }, { passive: true });
 
     canvas.addEventListener("touchend", (event) => {
-      if (!touchStart || !animation) return;
-      const touch = event.changedTouches[0];
-      const dx = touch.clientX - touchStart.x;
-      const dy = touch.clientY - touchStart.y;
+      const start = touchStart;
       touchStart = undefined;
+      if (!start || !animation || introPlaying) return;
+      const touch = event.changedTouches[0];
+      const dx = touch.clientX - start.x;
+      const dy = touch.clientY - start.y;
       if (Math.abs(dy) < 36 || Math.abs(dy) < Math.abs(dx) * 1.2) return;
       play(dy < 0 ? 1 : -1);
     });
@@ -184,18 +198,32 @@
     window.addEventListener("resize", requestFrame);
 
     async function loadAnimation(bytes) {
+      introAnimation?.delete();
+      animation?.delete();
+      introAnimation = undefined;
+      animation = undefined;
       riveFile?.unref?.();
       riveFile = await rive.load(new Uint8Array(bytes));
       artboard = riveFile.defaultArtboard();
-      const definition = artboard.animationByName(ANIMATION_NAME);
-      if (!definition) throw new Error(`找不到 ${ANIMATION_NAME}`);
-      animation?.delete();
-      animation = new rive.LinearAnimationInstance(definition, artboard);
+      const introDefinition = artboard.animationByName(INTRO_ANIMATION_NAME);
+      const scrollDefinition = artboard.animationByName(SCROLL_ANIMATION_NAME);
+      if (!introDefinition || !scrollDefinition) {
+        throw new Error(`找不到 ${INTRO_ANIMATION_NAME} 或 ${SCROLL_ANIMATION_NAME}`);
+      }
+      introAnimation = new rive.LinearAnimationInstance(introDefinition, artboard);
+      animation = new rive.LinearAnimationInstance(scrollDefinition, artboard);
+      introTimelineSeconds = introDefinition.duration / introDefinition.fps;
+      introPlayDurationMs = introTimelineSeconds * 1000 / introDefinition.speed;
+      scrollDurationSeconds = scrollDefinition.duration / scrollDefinition.fps;
       renderer ??= rive.makeRenderer(canvas);
       progress = 0;
+      introProgress = 0;
+      introPlaying = true;
+      introStartedAt = performance.now();
       motion = undefined;
       fallback.hidden = true;
       render();
+      requestFrame();
     }
 
     async function loadDefaultFile() {

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>个人作品集</title>
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      cursor: ns-resize;
+      outline: 0;
+    }
+
+    /* 正常加载后不显示；仅为直接双击 HTML 时选取本地 .riv 的兜底。 */
+    #fallback {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      color: #111827;
+      background: #fff;
+      font: 16px/1.5 "PingFang SC", "Microsoft YaHei", sans-serif;
+      text-align: center;
+    }
+
+    #fallback[hidden] { display: none; }
+    #fallback p { margin: 0 0 14px; }
+    #fallback button {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 16px;
+      color: #fff;
+      background: #1465f4;
+      font: inherit;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="rive-canvas" aria-label="滚轮控制动画"></canvas>
+
+  <div id="fallback" hidden>
+    <div>
+      <p id="fallback-message">正在加载动画…</p>
+      <button id="choose-file" type="button">选择 untitled.riv</button>
+      <input id="rive-file-picker" type="file" accept=".riv,application/octet-stream" hidden />
+    </div>
+  </div>
+
+  <script type="module">
+    import RiveCanvas from "./assets/rive-runtime/canvas_advanced.mjs";
+
+    const RIVE_FILE = "./assets/untitled.riv?v=timeline1-30frames";
+    const ANIMATION_NAME = "Timeline 1";
+    // Timeline 1 共 30 帧、30 fps，完整时长为 1 秒。
+    const KEYFRAME_SEGMENT_SECONDS = 1;
+    const FULL_PLAY_DURATION_MS = 1000;
+
+    const canvas = document.querySelector("#rive-canvas");
+    const fallback = document.querySelector("#fallback");
+    const fallbackMessage = document.querySelector("#fallback-message");
+    const chooseFile = document.querySelector("#choose-file");
+    const filePicker = document.querySelector("#rive-file-picker");
+
+    let rive;
+    let riveFile;
+    let renderer;
+    let artboard;
+    let animation;
+    let progress = 0;
+    let motion;
+    let raf = 0;
+
+    function resizeCanvas() {
+      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.max(1, Math.round(window.innerWidth * pixelRatio));
+      const height = Math.max(1, Math.round(window.innerHeight * pixelRatio));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+    }
+
+    function render() {
+      if (!animation) return;
+
+      // apply() 会使用 Rive 文件内的关键帧插值（包括 .75, 0, .58, 1），
+      // 网页端不额外叠加 CSS / JavaScript 缓动曲线。
+      animation.time = progress * KEYFRAME_SEGMENT_SECONDS;
+      animation.apply(1);
+      artboard.advance(0);
+      resizeCanvas();
+
+      renderer.clear();
+      renderer.save();
+      // 窄屏完整展示画板，宽屏铺满视口。
+      renderer.align(
+        window.innerWidth < 700 ? rive.Fit.contain : rive.Fit.cover,
+        rive.Alignment.center,
+        { minX: 0, minY: 0, maxX: canvas.width, maxY: canvas.height },
+        artboard.bounds,
+      );
+      artboard.draw(renderer);
+      renderer.restore();
+      rive.resolveAnimationFrame();
+    }
+
+    function requestFrame() {
+      if (!raf) raf = requestAnimationFrame(animate);
+    }
+
+    function animate(now) {
+      raf = 0;
+      if (motion) {
+        const elapsed = Math.min(1, (now - motion.startedAt) / motion.duration);
+        // 关键帧插值由 Rive 文件负责；网页端只按真实时长推进。
+        progress = motion.from + (motion.to - motion.from) * elapsed;
+        if (elapsed === 1) motion = undefined;
+      }
+      render();
+      if (motion) requestFrame();
+    }
+
+    function play(direction) {
+      if (!animation) return;
+      const target = direction > 0 ? 1 : 0;
+      if (motion?.to === target || Math.abs(target - progress) < 0.0001) return;
+
+      // 正放或倒放完整 0–1 秒关键帧段均为 1 秒；中途反向按剩余距离返回。
+      motion = {
+        from: progress,
+        to: target,
+        startedAt: performance.now(),
+        duration: Math.max(1, FULL_PLAY_DURATION_MS * Math.abs(target - progress)),
+      };
+      requestFrame();
+    }
+
+    window.addEventListener("wheel", (event) => {
+      if (!animation || event.deltaY === 0) return;
+      event.preventDefault();
+      play(event.deltaY > 0 ? 1 : -1);
+    }, { passive: false });
+
+    window.addEventListener("resize", requestFrame);
+
+    async function loadAnimation(bytes) {
+      riveFile?.unref?.();
+      riveFile = await rive.load(new Uint8Array(bytes));
+      artboard = riveFile.defaultArtboard();
+      const definition = artboard.animationByName(ANIMATION_NAME);
+      if (!definition) throw new Error(`找不到 ${ANIMATION_NAME}`);
+      animation?.delete();
+      animation = new rive.LinearAnimationInstance(definition, artboard);
+      renderer ??= rive.makeRenderer(canvas);
+      progress = 0;
+      motion = undefined;
+      fallback.hidden = true;
+      render();
+    }
+
+    async function loadDefaultFile() {
+      const response = await fetch(RIVE_FILE);
+      if (!response.ok) throw new Error(`无法读取动画（HTTP ${response.status}）`);
+      await loadAnimation(await response.arrayBuffer());
+    }
+
+    chooseFile.addEventListener("click", () => filePicker.click());
+    filePicker.addEventListener("change", async () => {
+      const selectedFile = filePicker.files?.[0];
+      if (!selectedFile || !rive) return;
+      fallbackMessage.textContent = "正在读取动画…";
+      try {
+        await loadAnimation(await selectedFile.arrayBuffer());
+      } catch (error) {
+        fallbackMessage.textContent = `无法读取该文件：${error.message}`;
+      }
+    });
+
+    try {
+      rive = await RiveCanvas({
+        locateFile: () => new URL("./assets/rive-runtime/rive.wasm", import.meta.url).href,
+      });
+      await loadDefaultFile();
+    } catch (error) {
+      console.error(error);
+      fallbackMessage.textContent = "请点击下方按钮，选择你的 untitled.riv 文件。";
+      fallback.hidden = false;
+    }
+  </script>
+</body>
+</html>

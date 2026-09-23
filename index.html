@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>个人作品集</title>
+  <title>Ethen个人作品集未完成版</title>
   <style>
     html, body {
       width: 100%;
@@ -64,10 +64,45 @@
   <script type="module">
     import RiveCanvas from "./assets/rive-runtime/canvas_advanced.mjs";
 
-    const RIVE_FILE = "./assets/untitled.riv?v=timeline3-wheel-scrub";
+    const RIVE_FILE = "./assets/untitled.riv?v=logo-update-d4ccfba4";
     const INTRO_ANIMATION_NAME = "Timeline 1";
     const SCROLL_ANIMATION_NAME = "Timeline 2";
     const FINAL_ANIMATION_NAME = "Timeline 3";
+    const HOVER_DEFINITIONS = [
+      {
+        id: "info", machine: "信息框架",
+        enter: "信息框架（鼠标进入）", exit: "信息框架（鼠标退出）",
+      },
+      {
+        id: "research", machine: "调研",
+        enter: "调研策划（鼠标进去）", exit: "调研策划（鼠标退出）",
+      },
+      {
+        id: "logo", machine: "logo",
+        enter: "logo（鼠标进入）", exit: "logo （鼠标退出）",
+        returnSpeedMultiplier: 2,
+      },
+      {
+        id: "font", machine: "字体",
+        enter: "字体(鼠标进入）", exit: "字体（鼠标退出）",
+      },
+      {
+        id: "motion", machine: "动效",
+        enter: "动效（鼠标进入）", exit: "动效（鼠标退出)",
+      },
+      {
+        id: "icon", machine: "图标",
+        enter: "图标（鼠标进入） ", exit: "图标（鼠标退出）  ",
+      },
+      {
+        id: "color", machine: "颜色",
+        enter: "颜色（鼠标进入）", exit: "颜色（鼠标退出）",
+      },
+      {
+        id: "image", machine: "影像",
+        enter: "影像（鼠标进入） ", exit: "影像（鼠标退出）",
+      },
+    ];
     const FINAL_AUTO_FRAME = 24;
     const FINAL_SCRUB_PIXELS = 2000;
     const FINAL_SCRUB_FOLLOW_MS = 45;
@@ -88,6 +123,7 @@
     let introAnimation;
     let animation;
     let finalAnimation;
+    let hoverControllers = [];
     let introTimelineSeconds = 0;
     let introPlayDurationMs = 0;
     let scrollDurationSeconds = 0;
@@ -104,6 +140,7 @@
     let finalTailArmed = false;
     let lastScrubFrameAt = 0;
     let queuedRewindPixels = 0;
+    let pointerPosition;
     let motion;
     let raf = 0;
 
@@ -131,6 +168,14 @@
         ? introProgress * introTimelineSeconds
         : progress * (stage === 0 ? scrollDurationSeconds : finalDurationSeconds);
       activeAnimation.apply(1);
+      // 每个悬停模块保留当前动画实例和当前帧，反向时不会重建或跳回端点。
+      if (stage === 1 && !introPlaying && progress >= 0.9999) {
+        for (const controller of hoverControllers) {
+          controller.clip.instance.time = controller.clip.startSeconds
+            + controller.progress * (controller.clip.endSeconds - controller.clip.startSeconds);
+          controller.clip.instance.apply(1);
+        }
+      }
       activeArtboard.advance(0);
       resizeCanvas();
 
@@ -157,6 +202,59 @@
 
     function requestFrame() {
       if (!raf) raf = requestAnimationFrame(animate);
+    }
+
+    function pointerOnFinalArtboard() {
+      if (!pointerPosition || !hoverControllers.length || introPlaying || stage !== 1
+          || motion || progress < 0.9999 || window.innerWidth < 1000) return undefined;
+      const rect = canvas.getBoundingClientRect();
+      const bounds = finalArtboard.bounds;
+      const scale = Math.max(rect.width / (bounds.maxX - bounds.minX),
+        rect.height / (bounds.maxY - bounds.minY));
+      const offsetX = (rect.width - (bounds.maxX - bounds.minX) * scale) / 2;
+      const offsetY = (rect.height - (bounds.maxY - bounds.minY) * scale) / 2;
+      return {
+        x: bounds.minX + (pointerPosition.x - rect.left - offsetX) / scale,
+        y: bounds.minY + (pointerPosition.y - rect.top - offsetY) / scale,
+      };
+    }
+
+    function syncHoverTargets() {
+      const point = pointerOnFinalArtboard();
+      let overInteractiveBlock = false;
+      for (const controller of hoverControllers) {
+        if (point) controller.machine.pointerMove(point.x, point.y);
+        else controller.machine.pointerExit();
+        const hovered = controller.input.value;
+        overInteractiveBlock ||= hovered;
+        if (hovered !== controller.hovered) {
+          controller.hovered = hovered;
+          controller.frameAt = performance.now();
+          requestFrame();
+        }
+      }
+      canvas.style.cursor = overInteractiveBlock ? "pointer" : "ns-resize";
+    }
+
+    function advanceHoverControllers(now) {
+      for (const controller of hoverControllers) {
+        const target = controller.hovered ? 1 : 0;
+        if (controller.progress !== target) {
+          const elapsed = controller.frameAt
+            ? Math.max(0, Math.min(50, now - controller.frameAt)) : 16;
+          const durationMs = controller.hovered ? controller.clip.durationMs
+            : controller.clip.durationMs / (controller.returnSpeedMultiplier || 1);
+          const distance = Math.min(Math.abs(target - controller.progress),
+            elapsed / durationMs);
+          controller.progress += Math.sign(target - controller.progress) * distance;
+          controller.frameAt = now;
+        }
+      }
+    }
+
+    function hoverControllersMoving() {
+      return hoverControllers.some(controller =>
+        controller.progress !== (controller.hovered ? 1 : 0));
     }
 
     function animate(now) {
@@ -195,9 +293,12 @@
         finalScrubTarget = 1;
         moveTo(1, "autoTail");
       }
+      syncHoverTargets();
+      advanceHoverControllers(now);
       render();
       if (introPlaying || motion || (stage === 1
-        && Math.abs(finalScrubTarget - progress) > FINAL_SCRUB_EPSILON)) requestFrame();
+        && Math.abs(finalScrubTarget - progress) > FINAL_SCRUB_EPSILON)
+        || hoverControllersMoving()) requestFrame();
     }
 
     function moveTo(target, kind = "timed") {
@@ -281,12 +382,27 @@
 
     canvas.addEventListener("touchcancel", () => { touchStart = undefined; });
 
+    canvas.addEventListener("pointermove", (event) => {
+      if (event.pointerType !== "mouse" && event.pointerType !== "pen") return;
+      pointerPosition = { x: event.clientX, y: event.clientY };
+      syncHoverTargets();
+    });
+    canvas.addEventListener("pointerleave", () => {
+      pointerPosition = undefined;
+      syncHoverTargets();
+    });
+
     window.addEventListener("resize", requestFrame);
 
     async function loadAnimation(bytes) {
       introAnimation?.delete();
       animation?.delete();
       finalAnimation?.delete();
+      for (const controller of hoverControllers) {
+        controller.clip.instance.delete();
+        controller.machine.delete();
+      }
+      hoverControllers = [];
       artboard?.delete?.();
       scrollArtboard?.delete?.();
       finalArtboard?.delete?.();
@@ -301,13 +417,52 @@
       const introDefinition = artboard.animationByName(INTRO_ANIMATION_NAME);
       const scrollDefinition = scrollArtboard.animationByName(SCROLL_ANIMATION_NAME);
       const finalDefinition = finalArtboard.animationByName(FINAL_ANIMATION_NAME);
-      if (!introDefinition || !scrollDefinition || !finalDefinition) {
-        throw new Error("找不到 Timeline 1、Timeline 2 或 Timeline 3");
+      const hoverDefinitions = HOVER_DEFINITIONS.map(config => ({
+        config,
+        enter: finalArtboard.animationByName(config.enter),
+        exit: finalArtboard.animationByName(config.exit),
+        machine: finalArtboard.stateMachineByName(config.machine),
+      }));
+      if (!introDefinition || !scrollDefinition || !finalDefinition
+          || hoverDefinitions.some(item => !item.enter || !item.exit || !item.machine)) {
+        throw new Error("找不到 Timeline 1–3 或完整的八组悬停动画/状态机");
       }
       if (finalDefinition.duration < FINAL_AUTO_FRAME) throw new Error("Timeline 3 不足 24 帧");
       introAnimation = new rive.LinearAnimationInstance(introDefinition, artboard);
       animation = new rive.LinearAnimationInstance(scrollDefinition, scrollArtboard);
       finalAnimation = new rive.LinearAnimationInstance(finalDefinition, finalArtboard);
+      const makeClip = definition => {
+        const startFrame = definition.enableWorkArea ? definition.workStart : 0;
+        const endFrame = definition.enableWorkArea ? definition.workEnd : definition.duration;
+        return {
+          instance: new rive.LinearAnimationInstance(definition, finalArtboard),
+          startSeconds: startFrame / definition.fps,
+          endSeconds: endFrame / definition.fps,
+          durationMs: Math.max(1, (endFrame - startFrame) / definition.fps
+            * 1000 / Math.abs(definition.speed || 1)),
+        };
+      };
+      hoverControllers = hoverDefinitions.map(({ config, enter, machine: machineDefinition }) => {
+        const machine = new rive.StateMachineInstance(machineDefinition, finalArtboard);
+        let input;
+        for (let index = 0; index < machine.inputCount(); index++) {
+          input ||= machine.input(index).asBool();
+        }
+        if (!input) {
+          machine.delete();
+          throw new Error(`${config.machine} 状态机缺少悬停布尔输入`);
+        }
+        machine.advanceAndApply(0);
+        return {
+          ...config,
+          machine,
+          input,
+          clip: makeClip(enter),
+          progress: 0,
+          hovered: false,
+          frameAt: 0,
+        };
+      });
       introTimelineSeconds = introDefinition.duration / introDefinition.fps;
       introPlayDurationMs = introTimelineSeconds * 1000 / introDefinition.speed;
       scrollDurationSeconds = scrollDefinition.duration / scrollDefinition.fps;

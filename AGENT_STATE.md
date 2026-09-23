@@ -407,16 +407,17 @@
 - 新增 `assets/analytics-client.js`：浏览器保存匿名 ID；同一浏览器重复访问累计浏览量，但数据库唯一访客只保留一条。统计失败不会影响 Rive。
 - 新增 `render.yaml`、Node 配置与自动化测试；服务端密钥仅通过 Render 环境变量提供，不进入仓库。
 
-结果：后台及统计功能已在本地完成，当前使用内存存储验证；Render PostgreSQL 尚未创建和部署。状态：PARTIAL
+结果：后台与统计功能已完成并以提交 `376f62f` 推送；GitHub Pages 前台已加载统计脚本。Render PostgreSQL 和后台服务尚未在用户账号内确认创建。状态：PARTIAL
 
 验证：
 - `npm test`：5 项全部通过，包括访客去重、请求重试去重、数据库故障返回可重试状态、同站来源、后台 Cookie、CORS、未授权拦截和源码文件保护。
 - 真实浏览器连续打开/刷新两次：累计独立访客 `1`、浏览量 `2`、回访访客 `1`；后台登录、趋势与列表正常。
 - Rive 回归：页面/Rive/统计接口分别返回 200/200/202，滚轮动画与新英文正常，无 JS/WASM 错误。PASS
+- GitHub Pages 对 `376f62f` 构建成功；线上首页、统计脚本、Rive、WASM 和后台跳转页均返回 200。
 
 遗留问题：需要在用户的 Render 账号中创建 Blueprint、设置 `ADMIN_PASSWORD`，并确认线上后台显示 `PostgreSQL 持久存储`。同一 Render workspace 只能有一个免费 PostgreSQL；若“脉冲音格”已占用，需要改用另一 workspace、付费库，或手动连接现有库。Render 免费 PostgreSQL 有保存期限，不适合作为长期档案；长期保留数据需后续升级数据库或接入其它持久 PostgreSQL。
 
-下一步：提交代码并部署 Render；完成公网去重与后台实测后更新为 PASS。
+下一步：用户在 Render Blueprint 页面设置 `ADMIN_PASSWORD` 并确认部署；完成公网 PostgreSQL 去重与后台实测后更新为 PASS。
 
 ## Step 23 — 替换蓝色页面英文并发布
 

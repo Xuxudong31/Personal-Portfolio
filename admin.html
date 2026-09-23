@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Ethen 个人作品集 — 数据后台</title>
+    <script>
+      if (location.hostname === "xuxudong31.github.io") {
+        location.replace("https://ethen-portfolio-analytics-xuxudong31.onrender.com/admin");
+      }
+    </script>
+    <link rel="stylesheet" href="/admin.css" />
+  </head>
+  <body>
+    <main class="admin-shell">
+      <section class="boot-state" id="bootState">
+        <span class="brand-mark" aria-hidden="true">E</span>
+        <span>正在连接数据后台…</span>
+      </section>
+
+      <section class="login-view" id="loginView" hidden>
+        <article class="login-card">
+          <a class="brand" href="/" aria-label="返回 Ethen 个人作品集">
+            <span class="brand-mark" aria-hidden="true">E</span>
+            <span><strong>ETHEN</strong><small>PORTFOLIO ANALYTICS</small></span>
+          </a>
+          <div class="login-copy">
+            <span class="eyebrow">ADMIN ONLY</span>
+            <h1>作品集数据后台</h1>
+            <p>登录后查看独立访客、浏览量、在线人数、访问趋势和设备来源。</p>
+          </div>
+          <form id="loginForm">
+            <label for="adminPassword">后台密码</label>
+            <div class="password-field">
+              <input id="adminPassword" name="password" type="password" autocomplete="current-password" placeholder="请输入 ADMIN_PASSWORD" required />
+              <button type="button" id="togglePassword" aria-label="显示密码">显示</button>
+            </div>
+            <button class="primary-button" id="loginButton" type="submit">进入数据后台</button>
+            <p class="form-error" id="loginError" role="alert"></p>
+          </form>
+          <p class="setup-note" id="setupNote" hidden>后台密码尚未配置，请先在 Render 环境变量中设置 <code>ADMIN_PASSWORD</code>。</p>
+        </article>
+      </section>
+
+      <section class="dashboard" id="dashboardView" hidden>
+        <header class="dashboard-header">
+          <a class="brand compact" href="/">
+            <span class="brand-mark" aria-hidden="true">E</span>
+            <span><strong>ETHEN</strong><small>数据后台</small></span>
+          </a>
+          <div class="header-actions">
+            <a class="ghost-button" href="https://xuxudong31.github.io/Personal-Portfolio/" target="_blank" rel="noopener">打开作品集</a>
+            <button class="ghost-button" id="refreshButton" type="button">刷新</button>
+            <button class="ghost-button danger" id="logoutButton" type="button">退出</button>
+          </div>
+        </header>
+
+        <div class="dashboard-content">
+          <div class="dashboard-title-row">
+            <div>
+              <span class="eyebrow">REAL-TIME OVERVIEW</span>
+              <h1>访问数据</h1>
+              <p id="lastUpdated">正在读取最新数据…</p>
+            </div>
+            <div class="title-controls">
+              <span class="storage-badge" id="storageBadge">检查存储中</span>
+              <label>
+                <span>时间范围</span>
+                <select id="rangeSelect">
+                  <option value="7">最近 7 天</option>
+                  <option value="14" selected>最近 14 天</option>
+                  <option value="30">最近 30 天</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="database-warning" id="databaseWarning" hidden>
+            当前使用临时内存统计，服务重启后数据会清空。线上部署必须连接 PostgreSQL。
+          </div>
+
+          <section class="metric-grid" aria-label="核心访问数据">
+            <article class="metric-card blue">
+              <span class="metric-label">今日独立访客</span>
+              <strong id="todayVisitors">0</strong>
+              <small id="todayVisitorsCompare">昨日 0 人</small>
+            </article>
+            <article class="metric-card cyan">
+              <span class="metric-label">今日浏览量</span>
+              <strong id="todayPageviews">0</strong>
+              <small id="todayPageviewsCompare">昨日 0 次</small>
+            </article>
+            <article class="metric-card mint">
+              <span class="metric-label">当前在线</span>
+              <strong id="onlineVisitors">0</strong>
+              <small>最近 5 分钟活跃</small>
+            </article>
+            <article class="metric-card amber">
+              <span class="metric-label">累计独立访客</span>
+              <strong id="totalVisitors">0</strong>
+              <small><span id="totalPageviews">0</span> 次页面浏览</small>
+            </article>
+          </section>
+
+          <p class="measurement-note">累计独立访客按匿名浏览器标识去重；同一浏览器重复访问只计 1 个访客，浏览量仍会累计。</p>
+
+          <section class="content-grid">
+            <article class="panel trend-panel">
+              <header class="panel-header">
+                <div><span class="eyebrow">VISIT TREND</span><h2>访客与浏览量</h2></div>
+                <div class="chart-legend"><span><i class="blue-dot"></i>访客</span><span><i class="cyan-dot"></i>浏览</span></div>
+              </header>
+              <div class="chart-wrap"><canvas id="trendChart" aria-label="访问趋势图"></canvas></div>
+            </article>
+
+            <article class="panel return-panel">
+              <header class="panel-header"><div><span class="eyebrow">RETURNING</span><h2>回访情况</h2></div></header>
+              <div class="return-content">
+                <strong id="returningRate">0%</strong>
+                <span>回访访客比例</span>
+                <p><b id="returningVisitors">0</b> 位访客访问过不止一次</p>
+              </div>
+            </article>
+
+            <article class="panel list-panel">
+              <header class="panel-header"><div><span class="eyebrow">SOURCE</span><h2>访问来源</h2></div></header>
+              <div class="rank-list" id="sourceList"></div>
+            </article>
+            <article class="panel list-panel">
+              <header class="panel-header"><div><span class="eyebrow">DEVICE</span><h2>设备分布</h2></div></header>
+              <div class="rank-list" id="deviceList"></div>
+            </article>
+            <article class="panel list-panel">
+              <header class="panel-header"><div><span class="eyebrow">BROWSER</span><h2>浏览器分布</h2></div></header>
+              <div class="rank-list" id="browserList"></div>
+            </article>
+
+            <article class="panel recent-panel">
+              <header class="panel-header"><div><span class="eyebrow">RECENT</span><h2>最近访问</h2></div></header>
+              <div class="recent-list" id="recentVisitorList"></div>
+            </article>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="/admin.js"></script>
+  </body>
+</html>
+

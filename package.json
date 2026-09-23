@@ -1,0 +1,14 @@
+{
+  "name": "ethen-personal-portfolio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --check analytics.mjs && node --check server.mjs && node --check admin.js && node --test test/server.test.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}
+

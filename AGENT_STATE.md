@@ -387,10 +387,10 @@
 - index.html：浏览器标签标题更新为“Ethen个人作品集未完成版”。
 - 准备将当前最新版网页与 Rive 资源提交并推送到 GitHub Pages 的 main 分支。
 
-结果：待部署验证。
+结果：最新版已发布至 `https://xuxudong31.github.io/Personal-Portfolio/`，线上标题为“Ethen个人作品集未完成版”。
 
-验证：待完成本地回归、GitHub Pages 构建和线上交互检查。
+验证：提交 `144dfa0` 的 GitHub Pages 构建成功；线上首页、Rive 资源均 HTTP 200，线上 Rive 文件大小与 SHA-256 和本地完全一致；公网浏览器实测滚轮进入最终页面、LOGO 悬停和移出恢复正常，复原截图与初始截图逐像素一致，无 JS/WASM 错误。PASS
 
 遗留问题：无。
 
-下一步：提交、推送并验证线上页面。
+下一步：等待用户检查线上效果。

@@ -68,6 +68,8 @@
     const INTRO_ANIMATION_NAME = "Timeline 1";
     const SCROLL_ANIMATION_NAME = "Timeline 2";
     const FINAL_ANIMATION_NAME = "Timeline 3";
+    const ORIGINAL_PORTFOLIO_COPY = "It should be the same everywhere. It takes a long time for hot water to come out here too. It used to be normal, but now it’s not.";
+    const PORTFOLIO_COPY = "Turning complex ideas into clear digital experiences.";
     const HOVER_DEFINITIONS = [
       {
         id: "info", machine: "信息框架",
@@ -124,6 +126,7 @@
     let animation;
     let finalAnimation;
     let hoverControllers = [];
+    const portfolioCopyRuns = new Map();
     let introTimelineSeconds = 0;
     let introPlayDurationMs = 0;
     let scrollDurationSeconds = 0;
@@ -154,6 +157,27 @@
       }
     }
 
+    function cachePortfolioCopyRuns(activeArtboard) {
+      const textRuns = [];
+      for (let index = 0; index < activeArtboard.textValueRunCount(); index++) {
+        textRuns.push(activeArtboard.textValueRunByIndex(index));
+      }
+      portfolioCopyRuns.set(activeArtboard, textRuns);
+    }
+
+    function releasePortfolioCopyRuns() {
+      for (const textRuns of portfolioCopyRuns.values()) {
+        for (const textRun of textRuns) textRun.delete();
+      }
+      portfolioCopyRuns.clear();
+    }
+
+    function replacePortfolioCopy(activeArtboard) {
+      for (const textRun of portfolioCopyRuns.get(activeArtboard) || []) {
+        if (textRun.text === ORIGINAL_PORTFOLIO_COPY) textRun.text = PORTFOLIO_COPY;
+      }
+    }
+
     function render() {
       const activeAnimation = introPlaying
         ? introAnimation
@@ -176,6 +200,7 @@
           controller.clip.instance.apply(1);
         }
       }
+      replacePortfolioCopy(activeArtboard);
       activeArtboard.advance(0);
       resizeCanvas();
 
@@ -403,6 +428,7 @@
         controller.machine.delete();
       }
       hoverControllers = [];
+      releasePortfolioCopyRuns();
       artboard?.delete?.();
       scrollArtboard?.delete?.();
       finalArtboard?.delete?.();
@@ -414,6 +440,9 @@
       artboard = riveFile.defaultArtboard();
       scrollArtboard = riveFile.defaultArtboard();
       finalArtboard = riveFile.defaultArtboard();
+      cachePortfolioCopyRuns(artboard);
+      cachePortfolioCopyRuns(scrollArtboard);
+      cachePortfolioCopyRuns(finalArtboard);
       const introDefinition = artboard.animationByName(INTRO_ANIMATION_NAME);
       const scrollDefinition = scrollArtboard.animationByName(SCROLL_ANIMATION_NAME);
       const finalDefinition = finalArtboard.animationByName(FINAL_ANIMATION_NAME);

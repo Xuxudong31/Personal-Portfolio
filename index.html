@@ -14,7 +14,7 @@
       background: #fff;
     }
 
-    canvas {
+    #rive-canvas {
       display: block;
       width: 100vw;
       height: 100vh;
@@ -22,6 +22,30 @@
       cursor: ns-resize;
       outline: 0;
       touch-action: none;
+    }
+
+    #mobile-portfolio {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior-y: contain;
+      background: transparent;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
+    }
+
+    #mobile-portfolio[hidden] { display: none; }
+    #mobile-scroll-track {
+      width: 100%;
+      pointer-events: none;
+    }
+    #mobile-canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      touch-action: pan-y;
     }
 
     /* 正常加载后不显示；仅为直接双击 HTML 时选取本地 .riv 的兜底。 */
@@ -52,6 +76,10 @@
 </head>
 <body>
   <canvas id="rive-canvas" aria-label="滚轮或手指滑动控制动画"></canvas>
+  <div id="mobile-portfolio" hidden aria-label="作品集内容，点击模块播放交互动画">
+    <div id="mobile-scroll-track" aria-hidden="true"></div>
+    <canvas id="mobile-canvas"></canvas>
+  </div>
 
   <div id="fallback" hidden>
     <div>
@@ -111,8 +139,31 @@
     const FINAL_SCRUB_PIXELS = 2000;
     const FINAL_SCRUB_FOLLOW_MS = 45;
     const FINAL_SCRUB_EPSILON = 0.001;
+    const MOBILE_BREAKPOINT = 768;
+    const MOBILE_TIMELINE_2_VIEWPORTS = 1.35;
+    const MOBILE_TIMELINE_3_VIEWPORTS = 2.4;
+    const MOBILE_LAYOUT_WIDTH = 1000;
+    const MOBILE_LAYOUT_HEIGHT = 2107;
+    const MOBILE_TILES = [
+      { id: "info", x: 14, y: 14, width: 382, height: 500, color: "#283750", source: [55, 66, 332, 529], radius: 12 },
+      { id: "research", x: 408, y: 14, width: 578, height: 500, color: "#fad24b", source: [412, 66, 592, 392], radius: 12 },
+      { id: "logo", x: 14, y: 526, width: 578, height: 427, color: "#3dd3ee", source: [1029, 66, 477, 529] },
+      { id: "font", x: 604, y: 526, width: 382, height: 616, color: "#fa551e", source: [1531, 66, 335, 377] },
+      { id: "icon", x: 14, y: 965, width: 382, height: 616, color: "#b4dc19", source: [55, 623, 332, 391] },
+      { id: "brand", x: 408, y: 965, width: 184, height: 177, color: "#1d30ff", source: [904, 492, 103, 97] },
+      { id: "color", x: 408, y: 1154, width: 578, height: 427, color: "#ff8c19", source: [412, 485, 475, 529] },
+      { id: "image", x: 14, y: 1593, width: 578, height: 500, color: "#892055", source: [912, 622, 594, 392], radius: 12 },
+      { id: "motion", x: 604, y: 1593, width: 382, height: 500, color: "#c8aff0", source: [1531, 471, 335, 543], radius: 12 },
+    ];
 
     const canvas = document.querySelector("#rive-canvas");
+    const mobilePortfolio = document.querySelector("#mobile-portfolio");
+    const mobileScrollTrack = document.querySelector("#mobile-scroll-track");
+    const mobileCanvas = document.querySelector("#mobile-canvas");
+    const mobileContext = mobileCanvas.getContext("2d", { alpha: false });
+    const mobileSourceCanvas = document.createElement("canvas");
+    mobileSourceCanvas.width = 1920;
+    mobileSourceCanvas.height = 1080;
     const fallback = document.querySelector("#fallback");
     const fallbackMessage = document.querySelector("#fallback-message");
     const chooseFile = document.querySelector("#choose-file");
@@ -121,6 +172,7 @@
     let rive;
     let riveFile;
     let renderer;
+    let mobileSourceRenderer;
     let artboard;
     let scrollArtboard;
     let finalArtboard;
@@ -146,8 +198,14 @@
     let lastScrubFrameAt = 0;
     let queuedRewindPixels = 0;
     let pointerPosition;
+    let mobilePortfolioVisible = false;
+    let syncingMobileScroll = false;
     let motion;
     let raf = 0;
+
+    function isPhoneLayout() {
+      return window.innerWidth < MOBILE_BREAKPOINT;
+    }
 
     function resizeCanvas() {
       const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
@@ -156,6 +214,121 @@
       if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
+      }
+    }
+
+    function mobileFinalIsVisible() {
+      return isPhoneLayout() && !introPlaying && stage === 1 && progress >= 0.9999;
+    }
+
+    function setMobilePortfolioVisibility(visible) {
+      if (visible === mobilePortfolioVisible) return;
+      mobilePortfolioVisible = visible;
+      mobilePortfolio.hidden = !visible;
+      if (visible) {
+        mobilePortfolio.scrollTop = 0;
+        updateMobileScrollTrack();
+        // 提前确定长页面高度，避免抵达结尾时页面尺寸突然增长。
+        composeMobilePortfolio();
+      }
+    }
+
+    function mobileScrollDistances() {
+      const viewport = Math.max(1, mobilePortfolio.clientHeight || window.innerHeight);
+      return {
+        timeline2: viewport * MOBILE_TIMELINE_2_VIEWPORTS,
+        timeline3: viewport * MOBILE_TIMELINE_3_VIEWPORTS,
+      };
+    }
+
+    function updateMobileScrollTrack() {
+      const distances = mobileScrollDistances();
+      mobileScrollTrack.style.height = `${window.innerHeight + distances.timeline2 + distances.timeline3}px`;
+    }
+
+    function syncAnimationToMobileScroll() {
+      if (syncingMobileScroll || !mobilePortfolioVisible || introPlaying || !isPhoneLayout()) return;
+      syncingMobileScroll = true;
+      const distances = mobileScrollDistances();
+      const scrollTop = mobilePortfolio.scrollTop;
+      motion = undefined;
+      if (scrollTop <= distances.timeline2) {
+        stage = 0;
+        progress = Math.max(0, Math.min(1, scrollTop / distances.timeline2));
+      } else {
+        stage = 1;
+        progress = Math.max(0, Math.min(1,
+          (scrollTop - distances.timeline2) / distances.timeline3));
+        finalScrubTarget = progress;
+        finalTailArmed = false;
+      }
+      syncingMobileScroll = false;
+      requestFrame();
+    }
+
+    function roundedTilePath(context, tile) {
+      context.beginPath();
+      if (tile.radius && typeof context.roundRect === "function") {
+        context.roundRect(tile.x, tile.y, tile.width, tile.height, tile.radius);
+      } else {
+        context.rect(tile.x, tile.y, tile.width, tile.height);
+      }
+    }
+
+    function composeMobilePortfolio() {
+      if (!mobileSourceRenderer || !finalArtboard) return;
+      mobileSourceRenderer.clear();
+      mobileSourceRenderer.save();
+      mobileSourceRenderer.align(
+        rive.Fit.fill,
+        rive.Alignment.center,
+        { minX: 0, minY: 0, maxX: 1920, maxY: 1080 },
+        finalArtboard.bounds,
+      );
+      finalArtboard.draw(mobileSourceRenderer);
+      mobileSourceRenderer.restore();
+      rive.resolveAnimationFrame();
+      const cssWidth = Math.max(1, mobilePortfolio.clientWidth || window.innerWidth);
+      const cssHeight = cssWidth * MOBILE_LAYOUT_HEIGHT / MOBILE_LAYOUT_WIDTH;
+      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      const bitmapWidth = Math.max(1, Math.round(cssWidth * pixelRatio));
+      const bitmapHeight = Math.max(1, Math.round(cssHeight * pixelRatio));
+      if (mobileCanvas.width !== bitmapWidth || mobileCanvas.height !== bitmapHeight) {
+        mobileCanvas.width = bitmapWidth;
+        mobileCanvas.height = bitmapHeight;
+        mobileCanvas.style.height = `${cssHeight}px`;
+      }
+      const scale = cssWidth / MOBILE_LAYOUT_WIDTH;
+      mobileContext.setTransform(pixelRatio * scale, 0, 0, pixelRatio * scale, 0, 0);
+      mobileContext.clearRect(0, 0, MOBILE_LAYOUT_WIDTH, MOBILE_LAYOUT_HEIGHT);
+      mobileContext.fillStyle = "#fff";
+      mobileContext.fillRect(0, 0, MOBILE_LAYOUT_WIDTH, MOBILE_LAYOUT_HEIGHT);
+      mobileContext.imageSmoothingEnabled = true;
+      mobileContext.imageSmoothingQuality = "high";
+      for (const tile of MOBILE_TILES) {
+        roundedTilePath(mobileContext, tile);
+        mobileContext.save();
+        mobileContext.clip();
+        mobileContext.fillStyle = tile.color;
+        mobileContext.fillRect(tile.x, tile.y, tile.width, tile.height);
+        const [sourceX, sourceY, sourceWidth, sourceHeight] = tile.source;
+        const sourceRatio = sourceWidth / sourceHeight;
+        const tileRatio = tile.width / tile.height;
+        let drawWidth;
+        let drawHeight;
+        if (tileRatio > sourceRatio) {
+          drawHeight = tile.height;
+          drawWidth = drawHeight * sourceRatio;
+        } else {
+          drawWidth = tile.width;
+          drawHeight = drawWidth / sourceRatio;
+        }
+        mobileContext.drawImage(mobileSourceCanvas,
+          sourceX, sourceY, sourceWidth, sourceHeight,
+          tile.x + (tile.width - drawWidth) / 2,
+          tile.y + (tile.height - drawHeight) / 2,
+          drawWidth, drawHeight);
+        mobileContext.restore();
       }
     }
 
@@ -204,6 +377,8 @@
       }
       replacePortfolioCopy(activeArtboard);
       activeArtboard.advance(0);
+      const mobileFinal = mobileFinalIsVisible();
+      setMobilePortfolioVisibility(isPhoneLayout() && !introPlaying);
       resizeCanvas();
 
       renderer.clear();
@@ -225,6 +400,7 @@
       activeArtboard.draw(renderer);
       renderer.restore();
       rive.resolveAnimationFrame();
+      if (mobileFinal) composeMobilePortfolio();
     }
 
     function requestFrame() {
@@ -247,6 +423,10 @@
     }
 
     function syncHoverTargets() {
+      if (mobileFinalIsVisible()) {
+        canvas.style.cursor = "default";
+        return;
+      }
       const point = pointerOnFinalArtboard();
       let overInteractiveBlock = false;
       for (const controller of hoverControllers) {
@@ -399,7 +579,7 @@
     canvas.addEventListener("touchend", (event) => {
       const start = touchStart;
       touchStart = undefined;
-      if (!start || !animation || introPlaying) return;
+      if (!start || !animation || introPlaying || isPhoneLayout()) return;
       const touch = event.changedTouches[0];
       const dx = touch.clientX - start.x;
       const dy = touch.clientY - start.y;
@@ -408,6 +588,25 @@
     });
 
     canvas.addEventListener("touchcancel", () => { touchStart = undefined; });
+
+    mobileCanvas.addEventListener("click", (event) => {
+      if (!mobilePortfolioVisible) return;
+      const rect = mobileCanvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) / rect.width * MOBILE_LAYOUT_WIDTH;
+      const y = (event.clientY - rect.top) / rect.height * MOBILE_LAYOUT_HEIGHT;
+      const tile = MOBILE_TILES.find(item => x >= item.x && x <= item.x + item.width
+        && y >= item.y && y <= item.y + item.height);
+      const controller = hoverControllers.find(item => item.id === tile?.id);
+      if (!controller) return;
+      const activate = !controller.hovered;
+      for (const item of hoverControllers) {
+        item.hovered = activate && item === controller;
+        item.frameAt = performance.now();
+      }
+      requestFrame();
+    });
+
+    mobilePortfolio.addEventListener("scroll", syncAnimationToMobileScroll, { passive: true });
 
     canvas.addEventListener("pointermove", (event) => {
       if (event.pointerType !== "mouse" && event.pointerType !== "pen") return;
@@ -419,7 +618,13 @@
       syncHoverTargets();
     });
 
-    window.addEventListener("resize", requestFrame);
+    window.addEventListener("resize", () => {
+      if (mobilePortfolioVisible) {
+        updateMobileScrollTrack();
+        syncAnimationToMobileScroll();
+      }
+      requestFrame();
+    });
 
     async function loadAnimation(bytes) {
       introAnimation?.delete();
@@ -502,6 +707,7 @@
       finalPlayDurationMs = finalDurationSeconds * 1000 / finalDefinition.speed;
       finalAutoProgress = FINAL_AUTO_FRAME / finalDefinition.duration;
       renderer ??= rive.makeRenderer(canvas);
+      mobileSourceRenderer ??= rive.makeRenderer(mobileSourceCanvas);
       stage = 0;
       progress = 0;
       finalScrubTarget = 0;

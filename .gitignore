@@ -1,4 +1,5 @@
 node_modules/
+.edgeone-dist/
 .cloudbase-dist/
 .env
 .env.*

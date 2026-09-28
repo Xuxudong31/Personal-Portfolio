@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:cloudbase": "node scripts/build-cloudbase.mjs",
+    "build:edgeone": "node scripts/build-edgeone.mjs",
     "start": "node server.mjs",
     "test": "node --check analytics.mjs && node --check server.mjs && node --check admin.js && node --test test/server.test.mjs"
   },

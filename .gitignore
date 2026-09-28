@@ -1,8 +1,9 @@
 node_modules/
 .edgeone-dist/
 .cloudbase-dist/
+.edgeone/
+.tef_dist/
 .env
 .env.*
 !.env.example
 npm-debug.log*
-

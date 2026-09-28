@@ -460,6 +460,18 @@
 
 状态：等待用户在腾讯云完成付款与实名后继续创建项目、选择中国大陆可用区、提交 ICP 备案并绑定域名。PARTIAL
 
+## Step 29 — 创建并上传 EdgeOne 项目
+
+时间：2026-09-28
+
+用户已完成腾讯云授权，要求继续部署。
+
+执行：通过 EdgeOne CLI 中国区账号创建 `ethen-personal-portfolio` 项目，并将 `.edgeone-dist` 的 5 个前端文件上传到 Production；项目 ID `makers-bw7q1gsjp6qy`。
+
+验证：部署 `dp1gzrpy6dsv` 状态为 `Success`，项目状态为 `Normal`，区域为 `global`。EdgeOne 临时域名受访问令牌保护；正式中国大陆域名仍需 ICP 备案通过后绑定。PASS（部署）/ PARTIAL（正式域名）
+
+下一步：用户本人提交个人非经营性 ICP 备案并完成短信/人脸核验；审核通过后绑定 `ethendesign.top`、切换中国大陆可用区、启用免费 HTTPS 并进行公网回归测试。
+
 ## Step 24 — 接入作品集访问统计与数据后台
 
 时间：2026-09-23

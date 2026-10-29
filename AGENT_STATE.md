@@ -532,3 +532,24 @@
 遗留问题：临时 CloudBase 域名未加入 Render 分析后台的 CORS 白名单，因此临时地址访问暂不计入统计；不影响页面和动画。正式域名备案通过后统一配置统计来源。
 
 下一步：等待用户检查临时页面；备案通过后绑定正式域名并启用国内 EdgeOne 与 HTTPS。
+
+## Step 31 — 正式国内域名与 HTTPS 上线
+
+时间：2026-10-29
+
+用户要求：备案完成后，将作品集正式部署到中国大陆可访问的自有域名。
+
+执行：
+- 将已备案域名 `dongyunfeng-design.top` 绑定至 EdgeOne Makers 的 Production 环境，并完成 DNS 所有权验证与根域 CNAME 解析。
+- 申请并部署 EdgeOne 免费 HTTPS 证书。
+- 修复 CLI 目录上传导致首页不在产物根目录的问题，改用 Makers SDK 显式上传 5 个根路径静态文件。
+- 修复 EdgeOne 将 `.mjs` 返回为 `application/octet-stream` 导致浏览器拒绝加载 Rive 的问题：EdgeOne 产物将同一 ESM 运行时发布为 `.js`，源站文件保持不变。
+
+验证：
+- `https://dongyunfeng-design.top/`、Rive、WASM 和 JS 运行时均返回 HTTP 200；JS 为 `application/javascript`，WASM 为 `application/wasm`。
+- Edge 真实浏览器：桌面 1440×900 与手机 390×844 均完成 Rive 初始化，2 个 Canvas 正常创建；鼠标滚轮和触摸拖动后截图均发生变化；无页面脚本错误。PASS。
+- `npm test`：5/5 PASS；`npm run build:edgeone` PASS。
+
+遗留：HTTP 当前仍直接返回 200，尚未强制跳转 HTTPS；需要在 EdgeOne 域名 HTTPS 配置中开启“强制 HTTPS”。正式域名还需加入 Render 的 `ANALYTICS_ALLOWED_ORIGINS`，否则新域名的访客统计可能被 CORS 拒绝，但不影响作品集动画。
+
+下一步：开启强制 HTTPS，更新统计白名单，再做一次最终公网回归测试。

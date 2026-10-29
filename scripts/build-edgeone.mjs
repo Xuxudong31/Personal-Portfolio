@@ -14,7 +14,7 @@ await cp(resolve(projectRoot, "assets"), resolve(outputRoot, "assets"), { recurs
 const sourceHtml = await readFile(resolve(projectRoot, "index.html"), "utf8");
 await writeFile(
   resolve(outputRoot, "index.html"),
-  sourceHtml.replace("canvas_advanced.mjs", "canvas_advanced.js"),
+  sourceHtml.replaceAll("canvas_advanced.mjs", "canvas_advanced.js"),
   "utf8",
 );
 await copyFile(

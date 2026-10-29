@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Ethen个人作品集未完成版</title>
+  <link rel="modulepreload" href="./assets/rive-runtime/canvas_advanced.mjs" />
+  <link rel="preload" href="./assets/rive-runtime/rive.wasm" as="fetch" type="application/wasm" crossorigin />
+  <link rel="preload" href="./assets/untitled.riv?v=logo-update-d4ccfba4" as="fetch" crossorigin />
   <style>
     html, body {
       width: 100%;
@@ -48,6 +51,34 @@
       touch-action: pan-y;
     }
 
+    #loading {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: grid;
+      place-items: center;
+      color: #1465f4;
+      background: #fff;
+      font: 16px/1.4 Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+      transition: opacity 180ms ease;
+    }
+
+    #loading[hidden] { display: none; }
+    #loading.is-complete { opacity: 0; }
+    #loading-content { width: min(280px, calc(100vw - 64px)); }
+    #loading-status { margin: 0 0 10px; }
+    #loading-track {
+      height: 2px;
+      overflow: hidden;
+      background: #dbe8ff;
+    }
+    #loading-progress {
+      width: 0;
+      height: 100%;
+      background: #1465f4;
+      transition: width 100ms linear;
+    }
+
     /* 正常加载后不显示；仅为直接双击 HTML 时选取本地 .riv 的兜底。 */
     #fallback {
       position: fixed;
@@ -79,6 +110,13 @@
   <div id="mobile-portfolio" hidden aria-label="作品集内容，点击模块播放交互动画">
     <div id="mobile-scroll-track" aria-hidden="true"></div>
     <canvas id="mobile-canvas"></canvas>
+  </div>
+
+  <div id="loading" role="status" aria-live="polite">
+    <div id="loading-content">
+      <p id="loading-status">正在加载作品集 0%</p>
+      <div id="loading-track" aria-hidden="true"><div id="loading-progress"></div></div>
+    </div>
   </div>
 
   <div id="fallback" hidden>
@@ -164,6 +202,9 @@
     const mobileSourceCanvas = document.createElement("canvas");
     mobileSourceCanvas.width = 1920;
     mobileSourceCanvas.height = 1080;
+    const loading = document.querySelector("#loading");
+    const loadingStatus = document.querySelector("#loading-status");
+    const loadingProgress = document.querySelector("#loading-progress");
     const fallback = document.querySelector("#fallback");
     const fallbackMessage = document.querySelector("#fallback-message");
     const chooseFile = document.querySelector("#choose-file");
@@ -202,6 +243,18 @@
     let syncingMobileScroll = false;
     let motion;
     let raf = 0;
+
+    function setLoadingProgress(percent, message = "正在加载作品集") {
+      const value = Math.max(0, Math.min(100, Math.round(percent)));
+      loadingStatus.textContent = `${message} ${value}%`;
+      loadingProgress.style.width = `${value}%`;
+    }
+
+    function finishLoading() {
+      setLoadingProgress(100, "加载完成");
+      loading.classList.add("is-complete");
+      setTimeout(() => { loading.hidden = true; }, 180);
+    }
 
     function isPhoneLayout() {
       return window.innerWidth < MOBILE_BREAKPOINT;
@@ -723,10 +776,38 @@
       requestFrame();
     }
 
-    async function loadDefaultFile() {
+    async function fetchRiveWithProgress() {
       const response = await fetch(RIVE_FILE);
       if (!response.ok) throw new Error(`无法读取动画（HTTP ${response.status}）`);
-      await loadAnimation(await response.arrayBuffer());
+      const total = Number(response.headers.get("Content-Length")) || 0;
+      if (!response.body || !total) {
+        setLoadingProgress(12);
+        return response.arrayBuffer();
+      }
+      const reader = response.body.getReader();
+      const chunks = [];
+      let loaded = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loaded += value.byteLength;
+        setLoadingProgress(10 + (loaded / total) * 80);
+      }
+      const bytes = new Uint8Array(loaded);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return bytes.buffer;
+    }
+
+    async function loadDefaultFile() {
+      const bytes = await fetchRiveWithProgress();
+      setLoadingProgress(92, "正在解析动画");
+      await loadAnimation(bytes);
+      finishLoading();
     }
 
     chooseFile.addEventListener("click", () => filePicker.click());
@@ -742,12 +823,15 @@
     });
 
     try {
+      setLoadingProgress(4, "正在启动动画引擎");
       rive = await RiveCanvas({
         locateFile: () => new URL("./assets/rive-runtime/rive.wasm", import.meta.url).href,
       });
+      setLoadingProgress(10);
       await loadDefaultFile();
     } catch (error) {
       console.error(error);
+      loading.hidden = true;
       fallbackMessage.textContent = "请点击下方按钮，选择你的 untitled.riv 文件。";
       fallback.hidden = false;
     }

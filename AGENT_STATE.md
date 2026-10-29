@@ -550,6 +550,6 @@
 - Edge 真实浏览器：桌面 1440×900 与手机 390×844 均完成 Rive 初始化，2 个 Canvas 正常创建；鼠标滚轮和触摸拖动后截图均发生变化；无页面脚本错误。PASS。
 - `npm test`：5/5 PASS；`npm run build:edgeone` PASS。
 
-遗留：HTTP 当前仍直接返回 200，尚未强制跳转 HTTPS；需要在 EdgeOne 域名 HTTPS 配置中开启“强制 HTTPS”。正式域名还需加入 Render 的 `ANALYTICS_ALLOWED_ORIGINS`，否则新域名的访客统计可能被 CORS 拒绝，但不影响作品集动画。
+更新：用户已在 EdgeOne 开启“强制 HTTPS”（302）；控制台显示开启成功，边缘节点仍在同步配置。正式域名还需加入 Render 的 `ANALYTICS_ALLOWED_ORIGINS`，否则新域名的访客统计可能被 CORS 拒绝，但不影响作品集动画。
 
 下一步：开启强制 HTTPS，更新统计白名单，再做一次最终公网回归测试。

@@ -174,21 +174,15 @@ async function handleApi(req, res, url) {
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/health") {
-    try {
-      await analytics.ready();
-      json(res, 200, {
-        ok: true,
-        service: "Ethen Portfolio Analytics",
-        analytics: { storage: analytics.storage, adminConfigured: analytics.configured },
-      });
-    } catch (error) {
-      console.error(`[analytics] 健康检查失败：${error.message}`);
-      json(res, 503, {
-        ok: false,
-        service: "Ethen Portfolio Analytics",
-        analytics: { storage: analytics.storage, adminConfigured: analytics.configured },
-      });
-    }
+    // Render uses this route to decide whether the web process is ready.
+    // Database availability is intentionally checked by analytics endpoints so
+    // an expired or temporarily unavailable database cannot trap the whole app
+    // on Render's "service waking up" screen.
+    json(res, 200, {
+      ok: true,
+      service: "Ethen Portfolio Analytics",
+      analytics: { storage: analytics.storage, adminConfigured: analytics.configured },
+    });
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/admin/session") {

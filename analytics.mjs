@@ -182,7 +182,12 @@ class PostgresAnalyticsStore {
   constructor({ databaseUrl, timeZone }) {
     this.kind = "postgres";
     this.timeZone = timeZone;
-    this.pool = new Pool({ connectionString: databaseUrl, max: 5, idleTimeoutMillis: 30_000 });
+    this.pool = new Pool({
+      connectionString: databaseUrl,
+      max: 5,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 5_000,
+    });
     this.schemaPromise = null;
   }
 

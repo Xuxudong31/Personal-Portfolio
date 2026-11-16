@@ -26,7 +26,7 @@ services:
       - key: ANALYTICS_TIME_ZONE
         value: Asia/Shanghai
       - key: ANALYTICS_ALLOWED_ORIGINS
-        value: https://xuxudong31.github.io
+        value: https://dongyunfeng-design.top,https://www.dongyunfeng-design.top
 
 databases:
   - name: ethen-portfolio-analytics
